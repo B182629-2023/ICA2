@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 
-import os
+import subprocess
 import sys
 import pandas as pd
 
@@ -13,9 +13,9 @@ import pandas as pd
 while True:
 	while True:
 		tax_group = input("Enter taxonomy group\n")
-		tax_group_correct = input(f"You entered '{tax_group}'. Is this correct? (yes/no)\n")
+		tax_group_correct = input(f"\nYou entered '{tax_group}'. Is this correct? (yes/no)\n")
 		if tax_group_correct == "yes":
-			print(f"\nQuerying taxonomic group '{tax_group}'...\n")
+			print(f"\n\nQuerying taxonomic group '{tax_group}'...\n")
 			break
 		elif tax_group_correct == "no":
 			print(f"\nResetting taxonomic group...\n")
@@ -24,18 +24,19 @@ while True:
 
 	# Searches for entries with taxnomic group with the swissprot filter and collects accession IDs
 	query = f"'{tax_group}[Organism:exp] AND swissprot[filter]'"
-	os.system("esearch -db protein -query " + query + " | efetch -format acc > accessions.txt")
+	subprocess.call("esearch -db protein -query " + query + " | efetch -format acc > accessions.txt", shell=True)
 
 	# Shows user the number of protein entries for taxonomic group and asks if they want to proceed
-	accession_id = open('accessions.txt').read().rsplit()
-	print("\nThere are " + str(len(accession_id)) + " protein entries for " + tax_group)
-	accession_no_continue = input(f"\nWould you like to continue querying {tax_group}? (yes/no)\n")
+	with open('accessions.txt', 'r') as accessions:
+		accs = accessions.read().rsplit('\n')
+		print("\nThere are " + str(len(accs)) + " protein entries for " + tax_group)
 
+	accession_no_continue = input(f"\nWould you like to continue querying {tax_group}? (yes/no)\n")
 	if accession_no_continue == "yes":
 		# collects protein family and superfamily information from the GenPept summary and removes unwated whitespace for each protein entry then exits loop
                 # sometimes this esearch returns 500 internal server error. If this occurs, run the code again as it always works the second/third time.
-		print(f"\nFetching protein families... (this may take several minutes)\n")
-		os.system("esearch -db protein -query " + query + " | efetch -format gp | grep -A 1 \"SIMILARITY\" | awk '{sub(/^[ \\t]+/,\"\");}1' > pf_raw.txt")
+		print(f"\n\nFetching protein families... (this may take several minutes)\n")
+		subprocess.call("esearch -db protein -query " + query + " | efetch -format gp | grep -A 1 \"SIMILARITY\" | awk '{sub(/^[ \\t]+/,\"\");}1' > pf_raw.txt", shell=True)
 		break
 
 	elif accession_no_continue == "no":
@@ -52,12 +53,13 @@ while True:
 with open("pf_raw.txt", "r") as input_file, open("pf_clean.txt", "w") as output_file:
 	string = " family"
 	# Removes everything but the name of the protein family, superfamily and subfamily and splits all these onto different lines using '.' as a separator.
-	edit1 = input_file.read().replace("\n"," ").replace("{ECO","\n").replace("[SIMILARITY]","\n").replace(" Belongs to the ","").replace("--","").replace(";","\n").replace(". ","\n").replace(" belongs to the ", "").split('\n')
+	clean_file = input_file.read().replace("\n"," ").replace(". ","\n").replace("[SIMILARITY] Belongs to the ","\n").replace("--","").replace(" belongs to the ", "").split('\n')
 	# stores rows in input file which contain the string 'family'
-	cleaned_rows = [row for row in edit1 if string in row]
-	#joins rows with protein family name only and outpus into cleaned file
-	family_rows = '\n'.join(cleaned_rows)
-	output_file.write(family_rows + "\n")
+	for row in clean_file:
+		if string in row:
+			print(row)
+			output_file.write(row + "\n")
+
 
 print("\nCounting protein families for " + tax_group + "...\n")
 
@@ -70,8 +72,11 @@ fam_df.columns = ['Family']
 # Creates a new column removing the string 'family' from all protein family names
 fam_df['Protein Family'] = fam_df.apply(lambda x : x['Family'].split(' family')[0], axis=1)
 family_df = fam_df[['Protein Family']]
+print(str(len(fam_df)) + " out of " + str(len(accs)) + " protein entries contain protein family information.")
+
 # Creates a new dataframe counting the number of unique protein families
 protein_family_df = family_df['Protein Family'].value_counts()
+print(str(len(protein_family_df)))
 row_number = len(protein_family_df)
 # Shows the user how many protein families are present in their taxonomic group
 print("\nThere are " + str(row_number) + " protein families in " + tax_group + ".\n")
@@ -165,35 +170,73 @@ while True:
 
 
 
-
-
 # The user is now asked for the protein family they would like to query, sequences for their full query are generated.
+
+
+accessionid = []
+proteinfam = []
 
 while True:
 	while True:
-		prot_family = input("\nPlease enter a protein family name to query.\n")
-		prot_family_correct = input("\nYou entered " + prot_family + ". Is this correct? (yes/no)\n")
-		if prot_family_correct == "yes":
-			print("\nQuerying taxonomic group " + tax_group + " and protein family " + prot_family + " ...\n")
+		while True:
+			prot_family = input("\nPlease enter a protein family name to query.\n")
+			prot_family_correct = input("\nYou entered " + prot_family + ". Is this correct? (yes/no)\n")
+			if prot_family_correct == "yes":
+				print("\nQuerying taxonomic group " + tax_group + " and protein family " + prot_family + " ...\n")
+				break
+			elif prot_family_correct == "no":
+				print(f"\nResetting protein family...\n")
+			else:
+				print("Invalid input.")
+
+		# Creates a variable for the query to be used in the esearch.
+		pfam_query_df = family_df.loc[family_df['Protein Family'].str.contains(prot_family, case=False)]
+		new_query = f"'{tax_group}[Organism:exp] AND swissprot[filter] AND {prot_family}'"
+		subprocess.call("esearch -db protein -query " + new_query + " | efetch -format acc > prot_accessions.txt", shell=True)
+		print("Progress:")
+		with open('prot_accessions.txt', 'r') as input_file, open('new_prot_accessions.txt', 'w') as output_file:
+			prot_accessions = input_file.read().rsplit('\n')
+			for accession in prot_accessions:
+				p_family = subprocess.run("esearch -db protein -query " + accession + "[accession] | efetch -format gp | grep -A 1 \"SIMILARITY\" | awk '{sub(/^[ \\t]+/,\"\");}1'", shell=True, capture_output=True, text=True)
+				p_return = p_family.stdout.strip()
+				p_replaced = p_return.replace("\n", " ").replace(". ","\n").replace("[SIMILARITY] Belongs to the ","")
+				string_f = " family"
+				for row in p_replaced.split("\n"):
+					if string_f in row:
+						if prot_family.lower() in row.lower():
+							accessionid.append(accession)
+							proteinfam.append(row)
+							print(str(len(accessionid)) + "/" + str(len(pfam_query_df)) + "accessions queried.")
+							output_file.write(accession + "\t" + row + "\n")
+				if len(accessionid) < len(pfam_query_df):
+					pass
+				else:
+					print("\nQuery complete!\n")
+					print(str(len(accessionid)) + " " +  prot_family + " family entries identified for " + tax_group)
+					break
+
+		# Shows the user the number of protein entries for their desired taxonomic group and protein family
+		pfam_query_df2 = family_df.loc[family_df['Protein Family'].str.contains(prot_family, case=False)].value_counts()
+		if len(pfam_query_df2) > 1:
+			print("\n\nHere are the unique protein families which contain the name " + prot_family + " and their protein counts.\n")
+			print(pfam_query_df2)
+			# If the user decides to choose 1 protein family, this will reduce the number of sequences used in the conservation analysis.
+			# This may also increase accuracy as only closely related proteins from one family are used.
+			print("\nYour query contains " + str(len(pfam_query_df2)) + " protein families.\nFor more accurate protein conservation results, it is recommended to query 1 protein family.\n")
 			break
-		elif prot_family_correct == "no":
-			print(f"\nResetting protein family...\n")
 		else:
-			print("Invalid input.")
+			break
 
-	# Creates a variable for the query to be used in the esearch.
-	new_query = f"'{tax_group}[Organism:exp] AND swissprot[filter] AND {prot_family}'"
-	os.system("esearch -db protein -query " + new_query + " | efetch -format acc > accessions2.txt")
-
-	# Shows the user the number of protein entries for their desired taxonomic group and protein family
-	accession2_id = open('accessions2.txt').read().rsplit("\n")
-	print("\nThere are " + str(len(accession2_id)) + " " +  prot_family + " family entries for " + tax_group)
-	accession2_no_continue = input(f"\nWould you like to continue with your query? (yes/no)\n")
+	accession2_no_continue = input("\nWould you like to continue with your query? (yes/no)\n")
 	if accession2_no_continue == "yes":
-
 		# Collects the protein sequences in fasta format and stores in a fasta file
 		print("\nFetching protein sequences... (this may take several minutes)\n")
-		os.system("esearch -db protein -query " + new_query + " | efetch -format fasta > sequences.fa")
+		with open("sequences.fa", "w") as output_file:
+			for accession in accessionid:
+				seqs = subprocess.run("esearch -db protein -query " + accession + "[accession] | efetch -format fasta", shell=True, capture_output=True, text=True)
+				seqs_return = seqs.stdout.strip()
+				output_file.write(seqs_return + "\n")
+				print(accession)
 		print("\nProtein sequences generated!")
 		break
 
@@ -203,4 +246,3 @@ while True:
 	else:
 		print("\nInvalid input. Please enter yes or no.\n")
 
-\rm *txt
