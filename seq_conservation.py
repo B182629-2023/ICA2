@@ -3,34 +3,48 @@
 import subprocess
 import pandas as pd
 
-
-
-
-
-
 # Imports PROSITE database
-subprocess.call("wget ftp://ftp.expasy.org/databases/prosite/prosite.dat", shell=True)
+#subprocess.call("wget ftp://ftp.expasy.org/databases/prosite/prosite.dat", shell=True)
 
 
 
 # Runs a multiple sequence alingment of chosen sequence set in clustal format
-subprocess.call("clustalo -i sequences.fa -o aligned_seqs.aln --outfmt=clustal", shell=True)
+subprocess.call("clustalo -i sequences.fa -o aligned_seqs.msf --outfmt=msf", shell=True)
 print("\nClustering protein sequences...\n")
+
+
+# Uses multiple sequence alignment file to create a conservation plot and outputs it to screen
+#subprocess.call("plotcon -sequence aligned_seqs.msf -graph png -win 10 -goutfile conservation_plot -scorefile EBLOSUM62", shell=True)
+#subprocess.call("eog *.png", shell=True)
+
+
+# Uses infoalign to generate multiple sequence alignment data.
+subprocess.call("infoalign aligned_seqs.msf -outfile conservation_score.infoalign", shell=True)
+
+
+# Create a datafile to visualise multiple sequence alignment data
+score_df = pd.read_csv("conservation_score.infoalign", sep="\t")
 
 
 
 # Asks the user if they would like to view the alignment output
-view_clustalo = input("Would you like to view the level of conservation between these sequences? (yes/no)\n") 
-if view_clustalo == "yes":
-	with open("aligned_seqs.aln", "r") as sequences:
-		content = sequences.read()
-		print(content)
-elif view_clustalo == "no":
-	pass
-else:
-	pass
+while True:
+	view_score = input("Would you like to view the level of conservation between these sequences? (yes/no)\n") 
+	if view_score == "yes":
+		print(score_df)
+		break
+	elif view_score == "no":
+		break
+	else:
+		print("Invalid Input.")
+
+subprocess.call("fprotdist aligned_seqs.msf -outfile distance_comparisons", shell=True)
+
+subprocess.call("fdrawtree 
 
 
+with open("distance_comparisons.txt", "r") as distance_file:
+	print(distance_file.read())
 
 # Creates a function which splits all entries in the prosite database and creates a separate dictionaries for all entries
 def split_entry(entry):
@@ -148,7 +162,7 @@ while True:
 		else:
 			print("Invalid input")
 	# Asks if  they wish to view another number
- 	view_prosite_data2 = input("Would you like to view another number of prosite motifs? (yes/no)\n")
+	view_prosite_data2 = input("Would you like to view another number of prosite motifs? (yes/no)\n")
 	if view_prosite_data2 == "yes":
 		pass
 	elif view_prosite_data2 == "no":
